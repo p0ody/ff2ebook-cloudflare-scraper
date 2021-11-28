@@ -24,7 +24,7 @@ app.use(async ctx => {
 		ctx.body = res;
 	}
 	else {
-		Logger.error("No URL specified.");
+		ctx.body = "No URL specified.";
 	}
 })
 app.listen(Config.App.LISTENING_PORT);
