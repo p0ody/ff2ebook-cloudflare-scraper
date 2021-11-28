@@ -136,7 +136,6 @@ export class ScraperMgr {
 		}
 
 		let pages = await this.browser.pages();
-		Logger.debug(pages.length);
 		if (pages.length <= 1) { // here we set 1 because there is always one open tab.
 			this.browser = null;
 			this.browser.close();
