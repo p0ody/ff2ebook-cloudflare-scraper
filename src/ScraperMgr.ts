@@ -42,7 +42,6 @@ export class ScraperMgr {
 	private async execQueue(id: string) {
 		await this.checkBrowserExist();
 		while (true) {
-			await this.delay(Config.ScraperMgr.LOOP_INTERVAL_MS); // Add a delay to slow down the check.
 			if (this.queue.isEmpty) {
 				Logger.error("Empty queue when it should not be...");
 				return null;
@@ -60,6 +59,7 @@ export class ScraperMgr {
 					break;
 				}
 			}
+			await this.delay(Config.ScraperMgr.LOOP_INTERVAL_MS); // Add a delay to slow down the check.
 		}
 		let entry = this.queue.pull();
 		return await this.getPage(entry.data);
@@ -70,7 +70,7 @@ export class ScraperMgr {
 			this.checkBrowserExist();
 
 			const page = await this.browser.newPage();
-			
+
 			if (Config.ScraperMgr.PROXY_AUTH.username) {
 				await page.authenticate(Config.ScraperMgr.PROXY_AUTH);
 			}
@@ -90,11 +90,14 @@ export class ScraperMgr {
 			}
 			// Add a delay before close page to slowdown the requests to reduce the chances of getting banned.
 			this.delay(Config.ScraperMgr.SLOWDOWN_MS).then(() => page.close());
-			//await page.close();
+			
 			return responseBody;
 		}
 		catch (err) {
 			Logger.error(err);
+		}
+		finally {
+			
 		}
 	}
 
