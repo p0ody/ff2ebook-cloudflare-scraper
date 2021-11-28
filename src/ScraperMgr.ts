@@ -28,7 +28,7 @@ export class ScraperMgr {
 		if (Config.ScraperMgr.PROXY_URL.length){
 			this.options.args.push(`--proxy-server=${Config.ScraperMgr.PROXY_URL}`);
 		}
-		this.lastUse = Date.now();
+		this.updateLastUsed();
 
 		setInterval(() => this.browserLife(), Config.ScraperMgr.LOOP_INTERVAL_MS);
 	}
@@ -103,6 +103,10 @@ export class ScraperMgr {
 
 	private async startBrowser() {
 		this.browser = await Puppeteer.launch(this.options);
+		this.browser.on("disconnected", () => {
+			this.browser = null;
+		});
+		this.updateLastUsed();
 		return this.browser;
 	}
 
@@ -115,7 +119,7 @@ export class ScraperMgr {
 			await this.startBrowser();
 		}
 
-		this.lastUse = Date.now();
+		this.updateLastUsed();
 	}
 
 	/**
@@ -137,5 +141,9 @@ export class ScraperMgr {
 			this.browser = null;
 			this.browser.close();
 		}
+	}
+
+	private async updateLastUsed() {
+		this.lastUse = Date.now();
 	}
 }
