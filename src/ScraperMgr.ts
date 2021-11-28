@@ -23,8 +23,11 @@ export class ScraperMgr {
 		this.queue = new QueueMgr();
 		this.options = {
 			headless: Config.ScraperMgr.PUPPETEER_HEADLESS,
-			args: ["--no-sandbox", "--disable-setuid-sandbox", `--proxy-server=${Config.ScraperMgr.PROXY_URL}`]
+			args: ["--no-sandbox", "--disable-setuid-sandbox"]
 		};
+		if (Config.ScraperMgr.PROXY_URL.length){
+			this.options.args.push(`--proxy-server=${Config.ScraperMgr.PROXY_URL}`);
+		}
 		this.lastUse = Date.now();
 
 		setInterval(() => this.browserLife(), Config.ScraperMgr.LOOP_INTERVAL_MS);
@@ -39,7 +42,7 @@ export class ScraperMgr {
 	private async execQueue(id: string) {
 		await this.checkBrowserExist();
 		while (true) {
-			await this.delay(Config.ScraperMgr.LOOP_INTERVAL_MS);
+			await this.delay(Config.ScraperMgr.LOOP_INTERVAL_MS); // Add a delay to slow down the check.
 			if (this.queue.isEmpty) {
 				Logger.error("Empty queue when it should not be...");
 				return null;
@@ -67,8 +70,11 @@ export class ScraperMgr {
 			this.checkBrowserExist();
 
 			const page = await this.browser.newPage();
-			await page.authenticate(Config.ScraperMgr.PROXY_AUTH);
-
+			
+			if (Config.ScraperMgr.PROXY_AUTH.username) {
+				await page.authenticate(Config.ScraperMgr.PROXY_AUTH);
+			}
+		
 			let response = await page.goto(url, { timeout: 30000, waitUntil: 'domcontentloaded' });
 			let responseBody = await response.text();
 			let responseData = await response.buffer();

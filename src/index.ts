@@ -11,14 +11,15 @@ const app = new Koa();
 app.use(BodyParser());
 
 const scraper = new ScraperMgr();
-
+let requestCount = 0;
 app.use(async ctx => {	
 	if (ctx.method == "POST") {
 		return;
 	}
 	if (ctx.query.url) {
+		requestCount++;
 		let url = <string>ctx.query.url
-		Logger.info("Url: "+ url);
+		Logger.info(`#${requestCount} - Url: ${url}`);
 		const res = await scraper.scrape(url);
 		ctx.body = res;
 	}
