@@ -73,10 +73,12 @@ export class ScraperMgr {
 				pagesCount = pages.length;
 				await this.delay(Config.ScraperMgr.LOOP_INTERVAL_MS);
 			} while (pagesCount > 1 && (Date.now() - timer) < 10000);
-			await this.browser.close();
-			await this.delay(2000);
+			if (this.browser) {
+				await this.browser.close();
+				await this.delay(2000);
+				this.browser = null;
+			}
 			this.paused = false;
-			this.browser = null;
 			return null;
 		}
 
