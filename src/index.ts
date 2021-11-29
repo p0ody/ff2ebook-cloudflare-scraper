@@ -4,14 +4,16 @@ import Logger from "loglevel";
 Logger.setLevel("debug");
 
 import { ScraperMgr } from "./ScraperMgr";
+import { QueueMgr } from "./QueueMgr";
 import { Config } from "../conf/config";
-
 
 const app = new Koa();
 app.use(BodyParser());
 
 const scraper = new ScraperMgr();
+const queue = new QueueMgr(Config.ScraperMgr.MAX_ASYNC_PAGE);
 let requestCount = 0;
+
 app.use(async ctx => {	
 	if (ctx.method == "POST") {
 		return;
@@ -20,7 +22,9 @@ app.use(async ctx => {
 		requestCount++;
 		let url = <string>ctx.query.url
 		Logger.info(`#${requestCount} - Url: ${url}`);
-		const res = await scraper.scrape(url);
+		
+ 		let id = queue.push(async () => await scraper.getPage(url));
+		const res = await queue.waitFor(id);
 		ctx.body = res;
 	}
 	else {
