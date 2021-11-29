@@ -1,38 +1,42 @@
-import Puppeteer from 'puppeteer-extra';
-import StealthPlugin from 'puppeteer-extra-plugin-stealth';
+import Puppeteer from "puppeteer-extra";
+import StealthPlugin from "puppeteer-extra-plugin-stealth";
 Puppeteer.use(StealthPlugin());
 import Logger from "loglevel";
 Logger.setLevel("debug");
+import { ChildProcess } from "child_process";
 
-import { QueueMgr } from "./QueueMgr";
 import { Config } from '../conf/config';
 import { Browser } from 'puppeteer-extra-plugin/dist/puppeteer';
 
+
 interface BrowserOptions {
-	headless: boolean,
-	args: Array<string>
+	headless?: boolean,
+	args?: Array<string>,
+	userDataDir?: string,
+	slowMo?: number,
 }
 
 export class ScraperMgr {
-	private queue: QueueMgr;
 	private options: BrowserOptions;
 	private browser: Browser | null;
 	private lastUse: number;
 	private paused: boolean;
+	private processes: Array<ChildProcess>
 	constructor() {
 		this.browser = null;
-		this.queue = new QueueMgr();
 		this.paused = false;
+		this.processes = [];
 		this.options = {
 			headless: Config.ScraperMgr.PUPPETEER_HEADLESS,
-			args: ["--no-sandbox", "--disable-setuid-sandbox"]
+			args: ["--no-sandbox", "--disable-setuid-sandbox"],
+			userDataDir: "./userDataDir",
 		};
 		if (Config.ScraperMgr.PROXY_URL.length){
 			this.options.args.push(`--proxy-server=${Config.ScraperMgr.PROXY_URL}`);
 		}
 		this.updateLastUsed();
 
-		setInterval(async () => await this.browserLife(), Config.ScraperMgr.LOOP_INTERVAL_MS);
+		setInterval(async () => await this.browserLife(), 5000);
 	}
 
 	async getPage(url: string) {
@@ -50,7 +54,7 @@ export class ScraperMgr {
 			}
 			await this.delay(Config.ScraperMgr.LOOP_INTERVAL_MS); // Add a delay to slow down the check.
 		}
-		await this.checkBrowserExist();
+		await this.startBrowser();
 
 		const page = await this.browser.newPage();
 
@@ -58,33 +62,26 @@ export class ScraperMgr {
 			await page.authenticate(Config.ScraperMgr.PROXY_AUTH);
 		}
 	
-		let response = await page.goto(url, { timeout: 30000, waitUntil: 'domcontentloaded' });
+		let response = await page.goto(url, { timeout: Config.ScraperMgr.NAV_TIMEOUT_MS, waitUntil: 'domcontentloaded' });
 		let responseBody = await response.text();
 		let responseData = await response.buffer();
 		
 		if (responseBody.includes("Attention Required! | Cloudflare")) { // When we get a captcha, restart browser.
-			Logger.error("Captcha detected, restarting browser");
+			Logger.error("Captcha detected, restarting browser...");
 			await page.close();
-			this.paused = true;
-			const timer = Date.now();
-			let pagesCount = 2;
-			do  { // Wait for other requests to finish, wait maximum of 10 sec.
-				const pages = await this.browser.pages();
-				pagesCount = pages.length;
-				await this.delay(Config.ScraperMgr.LOOP_INTERVAL_MS);
-			} while (pagesCount > 1 && (Date.now() - timer) < 10000);
-			if (this.browser) {
-				await this.browser.close();
-				await this.delay(2000);
-				this.browser = null;
-			}
-			this.paused = false;
+			await this.closeBrowser();
 			return null;
 		}
 
 		let tryCount = 0;
-		while (responseBody.includes("cf-browser-verification") && tryCount <= 6) {
-			let newResponse = await page.waitForNavigation({ timeout: 10000, waitUntil: 'domcontentloaded' });
+		while (responseBody.includes("cf-browser-verification")) {
+			this.paused = true; // Pause to allow page to close and update cookies instead of letting multiple page wait for browser validation
+			if (tryCount >= 2) {
+				await page.close();
+				this.paused = false;
+				return null;
+			}
+			let newResponse = await page.waitForNavigation({ timeout: Config.ScraperMgr.NAV_TIMEOUT_MS, waitUntil: 'domcontentloaded' });
 			if (newResponse) {
 				response = newResponse;
 			}
@@ -93,39 +90,71 @@ export class ScraperMgr {
 			tryCount++;
 		}
 		// Add a delay before close page to slowdown the requests to reduce the chances of getting banned.
-		this.delay(Config.ScraperMgr.SLOWDOWN_MS).then(async () => await page.close());
+		this.delay(Config.ScraperMgr.SLOWDOWN_MS).then(async () => {
+			await page.close();
+			this.paused = false;
+		});
 		
 		return responseBody;
 	}
 
 	private async startBrowser() {
-		this.paused = true;
-		this.browser = await Puppeteer.launch(this.options);
-		while (!this.browser.isConnected()) { // Wait for browser to be connected.
+		while (this.paused) { // If already paused, dont start a new browser to avoid starting multiple browser.
 			await this.delay(Config.ScraperMgr.LOOP_INTERVAL_MS);
 		}
+		if (this.browser && this.browser.isConnected()) {
+			return this.browser;
+		}
+
+		this.paused = true;
+		this.browser = await Puppeteer.launch(this.options);
+		while (!this.browser.isConnected()) {
+			await this.delay(Config.ScraperMgr.LOOP_INTERVAL_MS);
+		}
+
+		this.processes.push(this.browser.process());
 		this.paused = false;
 
 		this.browser.on("disconnected", async () => {
-			this.browser = null;
-			this.paused = true;
-			await this.delay(5000); // Add delay to avoid starting multiple browser at the same time
-			this.paused = false;
+			this.closeBrowser();
 		});
 		this.updateLastUsed();
 		return this.browser;
 	}
 
-	private async delay(ms: number) {
-		return new Promise(resolve => setTimeout(resolve, ms));
-	}
-
-	private async checkBrowserExist() {
-		if (!this.browser || !this.browser.isConnected()) {
-			await this.startBrowser();
+	private async closeBrowser(): Promise<boolean> {
+		if (!this.browser) {
+			while (this.processes.length > 0) { // Kill a child process to make sure no browser stays open.
+				this.processes.pop().kill();
+			}
+			return true;
 		}
 
-		this.updateLastUsed();
+		this.paused = true;
+		let pagesCount = 0;
+		let timer = Date.now();
+		do  { // Wait for other requests to finish, wait maximum of 10 sec.
+			const pages = await this.browser.pages();
+			pagesCount = pages.length;
+			await this.delay(Config.ScraperMgr.LOOP_INTERVAL_MS);
+		} while (pagesCount > 1 && (Date.now() - timer) < 10000);
+
+		if (this.browser) {
+			await this.browser.close();
+		}
+		
+		while (this.processes.length > 0) { // Kill a child process to make sure no browser stays open.
+			this.processes.pop().kill();
+		}
+
+		await this.delay(3000);
+		this.browser = null;
+		this.paused = false;
+		return true;
+	}
+
+	private async delay(ms: number) {
+		return new Promise(resolve => setTimeout(resolve, ms));
 	}
 
 	/**
@@ -144,11 +173,7 @@ export class ScraperMgr {
 		let pages = await this.browser.pages();
 		if (pages.length <= 1) { // here we set 1 because there is always one open tab.
 			Logger.info("Closing browser due to inactivity.");
-			this.paused = true;
-			await this.browser.close();
-			this.browser = null;
-			await this.delay(2000); // Add delay to avoid starting multiple browser at the same time
-			this.paused = false;
+			await this.closeBrowser();
 		}
 	}
 

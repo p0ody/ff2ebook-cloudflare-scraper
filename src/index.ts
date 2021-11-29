@@ -34,5 +34,9 @@ app.use(async ctx => {
 app.listen(Config.App.LISTENING_PORT);
 
 process.on("uncaughtException", (err: Error) => {
-	Logger.error("Error: "+ err.message);
+	Logger.error("uncaughtException: "+ err.message);
+});
+
+process.on("unhandledRejection", (err: Error) => {
+	Logger.error("unhandledRejection: "+ err.message);
 });

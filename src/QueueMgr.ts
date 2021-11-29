@@ -18,7 +18,7 @@ export class QueueMgr {
 		this.inProgress = [];
 		this.maxAsync = maxAsync;
 
-		setInterval(this.loop.bind(this), Config.ScraperMgr.LOOP_INTERVAL_MS);
+		setInterval(this.loop.bind(this), Config.ScraperMgr.LOOP_INTERVAL_MS/2);
 	}
 
 	push(fn: Function) : string {
@@ -49,7 +49,6 @@ export class QueueMgr {
 		}
 
 		let element = this.next;
-
 		if (!element) {
 			return;
 		}
