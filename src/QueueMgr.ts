@@ -55,7 +55,6 @@ export class QueueMgr {
 		}
 		await this.setInProgress(element, true);
 		element.result = await element.fn();
-		console.log(`result: ${element.result}`);
 		element.done = true; 
 		await this.setInProgress(element, false);
 	}
