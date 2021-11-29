@@ -43,8 +43,8 @@ export class ScraperMgr {
 						await this.startBrowser();
 					}
 		
-					let pages = await this.browser.pages();
-					let pagesCount = pages.length;
+					const pages = await this.browser.pages();
+					const pagesCount = pages.length;
 					if (pagesCount < Config.ScraperMgr.MAX_ASYNC_PAGE) {
 						break;
 					}
@@ -66,6 +66,13 @@ export class ScraperMgr {
 			if (responseBody.includes("Attention Required! | Cloudflare")) { // When we get a captcha, restart browser.
 				Logger.error("Captcha detected, restarting browser");
 				this.paused = true;
+				const timer = Date.now();
+				let pagesCount = 2;
+				do  { // Wait for other requests to finish, wait maximum of 10 sec.
+					const pages = await this.browser.pages();
+					pagesCount = pages.length;
+					await this.delay(Config.ScraperMgr.LOOP_INTERVAL_MS);
+				} while (pagesCount > 1 && (Date.now() - timer) < 10000);
 				await this.browser.close();
 				await this.delay(2000);
 				this.paused = false;
