@@ -32,3 +32,7 @@ app.use(async ctx => {
 	}
 })
 app.listen(Config.App.LISTENING_PORT);
+
+process.on("uncaughtException", (err: Error) => {
+	Logger.error("Error: "+ err.message);
+});
