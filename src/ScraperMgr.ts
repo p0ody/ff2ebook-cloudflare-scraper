@@ -36,81 +36,81 @@ export class ScraperMgr {
 	}
 
 	async getPage(url: string) {
-		try {
-			while (true) {
-				if (!this.paused) {
-					if (!this.browser) {
-						await this.startBrowser();
-					}
-		
-					const pages = await this.browser.pages();
-					const pagesCount = pages.length;
-					if (pagesCount < Config.ScraperMgr.MAX_ASYNC_PAGE) {
-						break;
-					}
+		while (true) {
+			if (!this.paused) {
+				if (!this.browser) {
+					await this.startBrowser();
 				}
-				await this.delay(Config.ScraperMgr.LOOP_INTERVAL_MS); // Add a delay to slow down the check.
-			}
-			await this.checkBrowserExist();
-
-			const page = await this.browser.newPage();
-
-			if (Config.ScraperMgr.PROXY_AUTH.username) {
-				await page.authenticate(Config.ScraperMgr.PROXY_AUTH);
-			}
-		
-			let response = await page.goto(url, { timeout: 30000, waitUntil: 'domcontentloaded' });
-			let responseBody = await response.text();
-			let responseData = await response.buffer();
-			
-			if (responseBody.includes("Attention Required! | Cloudflare")) { // When we get a captcha, restart browser.
-				Logger.error("Captcha detected, restarting browser");
-				this.paused = true;
-				const timer = Date.now();
-				let pagesCount = 2;
-				do  { // Wait for other requests to finish, wait maximum of 10 sec.
-					const pages = await this.browser.pages();
-					pagesCount = pages.length;
-					await this.delay(Config.ScraperMgr.LOOP_INTERVAL_MS);
-				} while (pagesCount > 1 && (Date.now() - timer) < 10000);
-				await this.browser.close();
-				await this.delay(2000);
-				this.paused = false;
-				this.browser = null;
-				return null;
-			}
-
-			let tryCount = 0;
-			while (responseBody.includes("cf-browser-verification") && tryCount <= 6) {
-				let newResponse = await page.waitForNavigation({ timeout: 10000, waitUntil: 'domcontentloaded' });
-				if (newResponse) {
-					response = newResponse;
+	
+				const pages = await this.browser.pages();
+				const pagesCount = pages.length;
+				if (pagesCount < Config.ScraperMgr.MAX_ASYNC_PAGE) {
+					break;
 				}
-				responseBody = await response.text();
-				responseData = await response.buffer();
-				tryCount++;
 			}
-			// Add a delay before close page to slowdown the requests to reduce the chances of getting banned.
-			this.delay(Config.ScraperMgr.SLOWDOWN_MS).then(async () => await page.close());
-			
-			return responseBody;
+			await this.delay(Config.ScraperMgr.LOOP_INTERVAL_MS); // Add a delay to slow down the check.
 		}
-		catch (err) {
-			Logger.error(err);
+		await this.checkBrowserExist();
+
+		const page = await this.browser.newPage();
+
+		if (Config.ScraperMgr.PROXY_AUTH.username) {
+			await page.authenticate(Config.ScraperMgr.PROXY_AUTH);
 		}
+	
+		let response = await page.goto(url, { timeout: 30000, waitUntil: 'domcontentloaded' });
+		let responseBody = await response.text();
+		let responseData = await response.buffer();
+		
+		if (responseBody.includes("Attention Required! | Cloudflare")) { // When we get a captcha, restart browser.
+			Logger.error("Captcha detected, restarting browser");
+			await page.close();
+			this.paused = true;
+			const timer = Date.now();
+			let pagesCount = 2;
+			do  { // Wait for other requests to finish, wait maximum of 10 sec.
+				const pages = await this.browser.pages();
+				pagesCount = pages.length;
+				await this.delay(Config.ScraperMgr.LOOP_INTERVAL_MS);
+			} while (pagesCount > 1 && (Date.now() - timer) < 10000);
+			await this.browser.close();
+			await this.delay(2000);
+			this.paused = false;
+			this.browser = null;
+			return null;
+		}
+
+		let tryCount = 0;
+		while (responseBody.includes("cf-browser-verification") && tryCount <= 6) {
+			let newResponse = await page.waitForNavigation({ timeout: 10000, waitUntil: 'domcontentloaded' });
+			if (newResponse) {
+				response = newResponse;
+			}
+			responseBody = await response.text();
+			responseData = await response.buffer();
+			tryCount++;
+		}
+		// Add a delay before close page to slowdown the requests to reduce the chances of getting banned.
+		this.delay(Config.ScraperMgr.SLOWDOWN_MS).then(async () => await page.close());
+		
+		return responseBody;
 	}
+
 	private async startBrowser() {
 		this.paused = true;
 		this.browser = await Puppeteer.launch(this.options);
+		while (!this.browser.isConnected()) { // Wait for browser to be connected.
+			await this.delay(Config.ScraperMgr.LOOP_INTERVAL_MS);
+		}
+		this.paused = false;
+
 		this.browser.on("disconnected", async () => {
 			this.browser = null;
 			this.paused = true;
-			await this.delay(2000); // Add delay to avoid starting multiple browser at the same time
+			await this.delay(5000); // Add delay to avoid starting multiple browser at the same time
 			this.paused = false;
 		});
 		this.updateLastUsed();
-		await this.delay(2000); // Add delay to avoid starting multiple browser at the same time
-		this.paused = false;
 		return this.browser;
 	}
 
