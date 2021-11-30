@@ -41,6 +41,7 @@ export class ScraperMgr {
 	}
 
 	async getPage(url: string) {
+		this.updateLastUsed();
 		while (true) {
 			if (!this.paused) {
 				if (!this.browser) {

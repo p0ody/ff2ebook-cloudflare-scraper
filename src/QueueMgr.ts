@@ -15,7 +15,7 @@ export class QueueMgr {
 	private maxAsync: number;
 	private timeout: number;
 	private interval: number;
-	constructor(maxAsync: number = 100, timeoutMS:number = 10000, interval:number = 1000) {
+	constructor(maxAsync: number = 100, timeoutMS:number = 0, interval:number = 1000) {
 		this.queue = [];
 		this.inProgress = [];
 		this.maxAsync = maxAsync;
@@ -106,6 +106,9 @@ export class QueueMgr {
 	}
 
 	private async checkTimedOut() {
+		if (this.timeout === 0) {
+			return;
+		}
 		for (let inProgress of this.inProgress) {
 			if (!inProgress.startTime) {
 				continue;
