@@ -21,6 +21,7 @@ export class ScraperMgr {
 	private browser: Browser | null;
 	private lastUse: number;
 	private paused: boolean;
+	private pausedSince: number | null;
 	private processes: Array<ChildProcess>
 	constructor() {
 		this.browser = null;
@@ -45,7 +46,6 @@ export class ScraperMgr {
 				if (!this.browser) {
 					await this.startBrowser();
 				}
-	
 				const pages = await this.browser.pages();
 				const pagesCount = pages.length;
 				if (pagesCount < Config.ScraperMgr.MAX_ASYNC_PAGE) {
@@ -54,7 +54,6 @@ export class ScraperMgr {
 			}
 			await this.delay(Config.ScraperMgr.LOOP_INTERVAL_MS); // Add a delay to slow down the check.
 		}
-		await this.startBrowser();
 
 		const page = await this.browser.newPage();
 
@@ -75,10 +74,10 @@ export class ScraperMgr {
 
 		let tryCount = 0;
 		while (responseBody.includes("cf-browser-verification")) {
-			this.paused = true; // Pause to allow page to close and update cookies instead of letting multiple page wait for browser validation
+			this.pause(true); // Pause to allow page to close and update cookies instead of letting multiple page wait for browser validation
 			if (tryCount >= 2) {
 				await page.close();
-				this.paused = false;
+				this.pause(false);
 				return null;
 			}
 			let newResponse = await page.waitForNavigation({ timeout: Config.ScraperMgr.NAV_TIMEOUT_MS, waitUntil: 'domcontentloaded' });
@@ -92,7 +91,7 @@ export class ScraperMgr {
 		// Add a delay before close page to slowdown the requests to reduce the chances of getting banned.
 		this.delay(Config.ScraperMgr.SLOWDOWN_MS).then(async () => {
 			await page.close();
-			this.paused = false;
+			this.pause(false);
 		});
 		
 		return responseBody;
@@ -106,17 +105,19 @@ export class ScraperMgr {
 			return this.browser;
 		}
 
-		this.paused = true;
+		this.pause(true);
+		await this.forceKill(); // Make sure to kill any instance of browser before starting new one
 		this.browser = await Puppeteer.launch(this.options);
 		while (!this.browser.isConnected()) {
 			await this.delay(Config.ScraperMgr.LOOP_INTERVAL_MS);
 		}
 
 		this.processes.push(this.browser.process());
-		this.paused = false;
+		this.pause(false);
 
 		this.browser.on("disconnected", async () => {
-			this.closeBrowser();
+			Logger.error("Browser disconnected.");
+			await this.closeBrowser();
 		});
 		this.updateLastUsed();
 		return this.browser;
@@ -124,13 +125,11 @@ export class ScraperMgr {
 
 	private async closeBrowser(): Promise<boolean> {
 		if (!this.browser) {
-			while (this.processes.length > 0) { // Kill a child process to make sure no browser stays open.
-				this.processes.pop().kill();
-			}
+			this.forceKill();
 			return true;
 		}
 
-		this.paused = true;
+		this.pause(true);
 		let pagesCount = 0;
 		let timer = Date.now();
 		do  { // Wait for other requests to finish, wait maximum of 10 sec.
@@ -149,7 +148,7 @@ export class ScraperMgr {
 
 		await this.delay(3000);
 		this.browser = null;
-		this.paused = false;
+		this.pause(false);
 		return true;
 	}
 
@@ -162,8 +161,15 @@ export class ScraperMgr {
 	 * @returns void
 	 */
 	private async browserLife(): Promise<void> {
+		if ((this.paused && this.pausedSince) && Date.now() - this.pausedSince > 10000) { // If paused for more than 10 sec, resume
+			this.pause(false);
+		}
 		if (!this.browser) {
 			return;
+		}
+
+		if (!this.browser.isConnected()) {
+			this.closeBrowser();
 		}
 
 		if ((Date.now() - this.lastUse)/1000 < Config.ScraperMgr.BROWSER_LIFE_SEC) {
@@ -179,5 +185,22 @@ export class ScraperMgr {
 
 	private async updateLastUsed() {
 		this.lastUse = Date.now();
+	}
+
+	private pause(paused: boolean) {
+		if (paused) {
+			this.paused = true;
+			this.pausedSince = Date.now();
+			return;
+		}
+
+		this.paused = false;
+		this.pausedSince = null;
+	}
+
+	private async forceKill() {
+		while (this.processes.length > 0) { // Kill a child process to make sure no browser stays open.
+			this.processes.pop().kill();
+		}
 	}
 }

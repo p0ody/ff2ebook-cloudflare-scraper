@@ -1,24 +1,28 @@
 import { getLogger } from 'loglevel';
 import { v4 as uuidv4 } from 'uuid';
-import { Config } from '../conf/config';
 
 interface QueueElement {
 	id: string,
 	fn: Function,
 	result: any,
 	done: boolean,
+	startTime?: number,
 }
 
 export class QueueMgr {
 	private queue: Array<QueueElement>;
 	private inProgress: Array<QueueElement>;
 	private maxAsync: number;
-	constructor(maxAsync: number = 100) {
+	private timeout: number;
+	private interval: number;
+	constructor(maxAsync: number = 100, timeoutMS:number = 10000, interval:number = 1000) {
 		this.queue = [];
 		this.inProgress = [];
 		this.maxAsync = maxAsync;
+		this.timeout = timeoutMS;
+		this.interval = interval;
 
-		setInterval(this.loop.bind(this), Config.ScraperMgr.LOOP_INTERVAL_MS/2);
+		setInterval(this.loop.bind(this), this.interval);
 	}
 
 	push(fn: Function) : string {
@@ -44,6 +48,8 @@ export class QueueMgr {
 	}
 
 	private async loop() {
+		this.checkTimedOut();
+		//console.log(`In Queue: ${this.queue.length}, In progress: ${this.inProgress.length}`);
 		if (this.inProgress.length >= this.maxAsync) {
 			return;
 		}
@@ -73,10 +79,10 @@ export class QueueMgr {
 		}
 
 		while (!waitFor.done) {
-			await this.delay(Config.ScraperMgr.LOOP_INTERVAL_MS);
+			await this.delay(this.interval);
 			// Wait until the function is done executing
 		} 
-		
+		await this.setInProgress(waitFor, false);
 		return waitFor.result;
 	}
 
@@ -86,6 +92,7 @@ export class QueueMgr {
 
 	private async setInProgress(element:QueueElement, inProgress: boolean) {
 		if (inProgress) {
+			element.startTime = Date.now();
 			this.inProgress.push(element);
 			return;
 		}
@@ -96,5 +103,17 @@ export class QueueMgr {
 			this.inProgress.splice(index, 1);
 		}
 
+	}
+
+	private async checkTimedOut() {
+		for (let inProgress of this.inProgress) {
+			if (!inProgress.startTime) {
+				continue;
+			}
+			if ((Date.now() - inProgress.startTime) > this.timeout) {
+				inProgress.result = null;
+				inProgress.done = true;
+			}
+		}
 	}
 }

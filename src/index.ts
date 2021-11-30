@@ -11,8 +11,9 @@ const app = new Koa();
 app.use(BodyParser());
 
 const scraper = new ScraperMgr();
-const queue = new QueueMgr(Config.ScraperMgr.MAX_ASYNC_PAGE);
+const queue = new QueueMgr(Config.ScraperMgr.MAX_ASYNC_PAGE, 10000, 300);
 let requestCount = 0;
+	
 
 app.use(async ctx => {	
 	if (ctx.method == "POST") {
@@ -28,7 +29,7 @@ app.use(async ctx => {
 		ctx.body = res;
 	}
 	else {
-		ctx.body = "No URL specified.";
+		 ctx.body = "No URL specified.";
 	}
 })
 app.listen(Config.App.LISTENING_PORT);
