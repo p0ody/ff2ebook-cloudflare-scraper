@@ -67,6 +67,7 @@ export class ScraperMgr {
 		let responseData = await response.buffer();
 		
 		if (responseBody.includes("Attention Required! | Cloudflare")) { // When we get a captcha, restart browser.
+			this.pause(true);
 			Logger.error("Captcha detected, restarting browser...");
 			await page.close();
 			await this.closeBrowser();
@@ -127,6 +128,7 @@ export class ScraperMgr {
 	private async closeBrowser(): Promise<boolean> {
 		if (!this.browser) {
 			this.forceKill();
+			this.pause(false);
 			return true;
 		}
 

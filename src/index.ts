@@ -33,6 +33,7 @@ app.use(async ctx => {
 	}
 })
 app.listen(Config.App.LISTENING_PORT);
+Logger.info(`Now listening on port ${Config.App.LISTENING_PORT}`);
 
 process.on("uncaughtException", (err: Error) => {
 	Logger.error("uncaughtException: "+ err.message);
