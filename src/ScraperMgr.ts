@@ -112,7 +112,7 @@ export class ScraperMgr {
 		while (!this.browser.isConnected()) {
 			await this.delay(Config.ScraperMgr.LOOP_INTERVAL_MS);
 		}
-
+		Logger.info("Browser started.");
 		this.processes.push(this.browser.process());
 		this.pause(false);
 
