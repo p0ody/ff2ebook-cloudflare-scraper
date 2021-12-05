@@ -13,26 +13,7 @@ interface BrowserOptions {
 	args?: Array<string>,
 	userDataDir?: string,
 	slowMo?: number,
-}
-
-interface Headers  {
-	"sec-ch-ua": string,
-	"sec-ch-ua-mobile": string, 
-	"sec-ch-ua-platform":string, 
-	"upgrade-insecure-requests":string,
-	"origin": string, 
-	"content-type": string, 
-	"user-agent": string, 
-	"referer": string,
-	"cookie": string,
-	"accept": string,
-	"upgrade-insecure-request": number
-}
-
-interface Cookie {
-	name: string,
-	value:string
-}
+}gity 
 
 export class ScraperMgr {
 	private options: BrowserOptions;
