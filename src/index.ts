@@ -23,7 +23,7 @@ app.use(async ctx => {
 		let url = <string>ctx.query.url
 		Logger.info(`#${requestCount} - Url: ${url}`);
 		
- 		let id = queue.push(async () => await scraper.getPage(url));
+ 		let id = queue.push(async () => await scraper.getPage(url).catch((err) => { Logger.error(`getPage Error: ${err}`)}));
 		const res = await queue.waitFor(id);
 		ctx.body = res;
 	}

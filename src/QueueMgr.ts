@@ -49,7 +49,7 @@ export class QueueMgr {
 
 	private async loop() {
 		this.checkTimedOut();
-		console.log(`In Queue: ${this.queue.length}, In progress: ${this.inProgress.length}`);
+		//console.log(`In Queue: ${this.queue.length}, In progress: ${this.inProgress.length}`);
 		if (this.inProgress.length >= this.maxAsync) {
 			return;
 		}

@@ -13,7 +13,7 @@ interface BrowserOptions {
 	args?: Array<string>,
 	userDataDir?: string,
 	slowMo?: number,
-}gity 
+}
 
 export class ScraperMgr {
 	private options: BrowserOptions;
@@ -59,8 +59,9 @@ export class ScraperMgr {
 			Logger.error(`${err}`);
 			return null;
 		});
+		
 		if (!page) {
-			console.log("Page not found");
+			Logger.error("Page not found");
 			return null;
 		}
 		this.pageList.push({ startTime: Date.now(), page: page });
@@ -139,6 +140,7 @@ export class ScraperMgr {
 			this.pauseBrowser(false);
 			return null;
 		});
+		await this.delay(500);
 
 		if (!this.isBrowserValid()) {
 			this.pauseBrowser(false);

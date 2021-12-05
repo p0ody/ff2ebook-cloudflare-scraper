@@ -11,4 +11,4 @@ To install:
 4. npm run build
 5. npm start
 
-To use, simply request the url in a browser: http://<your-ip>:<port>/?url=<URL to fetch>
+To use, simply request the url in a browser: http://your-ip:port/?url=URL to fetch
