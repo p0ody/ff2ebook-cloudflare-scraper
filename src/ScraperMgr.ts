@@ -1,6 +1,5 @@
 import Puppeteer from "puppeteer-extra";
 import StealthPlugin from "puppeteer-extra-plugin-stealth";
-import Axios from "axios";
 Puppeteer.use(StealthPlugin());
 import Logger from "loglevel";
 Logger.setLevel("debug");
