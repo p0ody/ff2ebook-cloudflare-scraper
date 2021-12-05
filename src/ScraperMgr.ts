@@ -23,11 +23,12 @@ export class ScraperMgr {
 	private browserPaused: boolean = false;
 	private pausedSince: number | null;
 	private pageList: Array<{ startTime: number, page: Page }> = [];
+
 	constructor() {
 		this.options = {
 			headless: Config.ScraperMgr.PUPPETEER_HEADLESS,
-			args: ["--no-sandbox", "--disable-setuid-sandbox"],
-			userDataDir: "./userDataDir",
+			args: ["--no-sandbox"],
+			//userDataDir: "./userDataDir",
 		};
 		if (Config.ScraperMgr.PROXY_URL.length){
 			this.options.args.push(`--proxy-server=${Config.ScraperMgr.PROXY_URL}`);
@@ -59,7 +60,7 @@ export class ScraperMgr {
 			Logger.error(`${err}`);
 			return null;
 		});
-		
+
 		if (!page) {
 			Logger.error("Page not found");
 			return null;
@@ -72,7 +73,7 @@ export class ScraperMgr {
 				Logger.error(`${err}`);
 			});
 		}
-	
+		
 		let response: HTTPResponse | null = await page.goto(url, { timeout: Config.ScraperMgr.NAV_TIMEOUT_MS, waitUntil: 'domcontentloaded' })
 		.catch((err) => {
 			Logger.error(`${err}`);
@@ -99,7 +100,7 @@ export class ScraperMgr {
 				this.pause(false);
 				return null;
 			}
-			let newResponse: HTTPResponse | null = await page.waitForNavigation({ timeout: Config.ScraperMgr.NAV_TIMEOUT_MS, waitUntil: 'domcontentloaded' })
+			let newResponse: HTTPResponse | null = await page.waitForNavigation({ timeout: Config.ScraperMgr.NAV_TIMEOUT_MS/2, waitUntil: 'domcontentloaded' })
 			.catch((err) => {
 				Logger.error(`${err}`);
 				page.close();
@@ -117,7 +118,7 @@ export class ScraperMgr {
 			responseBody = await response.text();
 			tryCount++;
 		}
-		
+
 		page.close();
 		this.pause(false);
 		return responseBody;
