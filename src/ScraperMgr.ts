@@ -1,12 +1,12 @@
 import Puppeteer from "puppeteer-extra";
 import StealthPlugin from "puppeteer-extra-plugin-stealth";
+import Axios from "axios";
 Puppeteer.use(StealthPlugin());
 import Logger from "loglevel";
 Logger.setLevel("debug");
-import { ChildProcess } from "child_process";
 
 import { Config } from '../conf/config';
-import { Browser } from 'puppeteer-extra-plugin/dist/puppeteer';
+import { Browser, Page, HTTPResponse } from "puppeteer";
 
 
 interface BrowserOptions {
@@ -16,17 +16,34 @@ interface BrowserOptions {
 	slowMo?: number,
 }
 
+interface Headers  {
+	"sec-ch-ua": string,
+	"sec-ch-ua-mobile": string, 
+	"sec-ch-ua-platform":string, 
+	"upgrade-insecure-requests":string,
+	"origin": string, 
+	"content-type": string, 
+	"user-agent": string, 
+	"referer": string,
+	"cookie": string,
+	"accept": string,
+	"upgrade-insecure-request": number
+}
+
+interface Cookie {
+	name: string,
+	value:string
+}
+
 export class ScraperMgr {
 	private options: BrowserOptions;
-	private browser: Browser | null;
+	private browser: Browser | null = null;
 	private lastUse: number;
-	private paused: boolean;
+	private paused: boolean = false;
+	private browserPaused: boolean = false;
 	private pausedSince: number | null;
-	private processes: Array<ChildProcess>
+	private pageList: Array<{ startTime: number, page: Page }> = [];
 	constructor() {
-		this.browser = null;
-		this.paused = false;
-		this.processes = [];
 		this.options = {
 			headless: Config.ScraperMgr.PUPPETEER_HEADLESS,
 			args: ["--no-sandbox", "--disable-setuid-sandbox"],
@@ -42,35 +59,54 @@ export class ScraperMgr {
 
 	async getPage(url: string) {
 		this.updateLastUsed();
-		while (true) {
-			if (!this.paused) {
-				if (!this.browser) {
-					await this.startBrowser();
-				}
-				const pages = await this.browser.pages();
-				const pagesCount = pages.length;
-				if (pagesCount < Config.ScraperMgr.MAX_ASYNC_PAGE) {
-					break;
-				}
+
+		while (this.paused || this.browserPaused) {
+			await this.delay(Config.ScraperMgr.LOOP_INTERVAL_MS);
+		}
+		if (!this.isBrowserValid()) {
+			if (!await this.startBrowser()) {
+				Logger.error("Could not launch browser.");
+				return null;
 			}
-			await this.delay(Config.ScraperMgr.LOOP_INTERVAL_MS); // Add a delay to slow down the check.
+		}
+		if (!this.isBrowserValid()) {
+			Logger.error("Browser not valid.");
+			return null;
 		}
 
-		const page = await this.browser.newPage();
+		const page: Page | null = await this.browser.newPage()
+		.catch((err) => {
+			Logger.error(`${err}`);
+			return null;
+		});
+		if (!page) {
+			console.log("Page not found");
+			return null;
+		}
+		this.pageList.push({ startTime: Date.now(), page: page });
 
 		if (Config.ScraperMgr.PROXY_AUTH.username) {
-			await page.authenticate(Config.ScraperMgr.PROXY_AUTH);
+			await page.authenticate(Config.ScraperMgr.PROXY_AUTH)
+			.catch((err) => {
+				Logger.error(`${err}`);
+			});
 		}
 	
-		let response = await page.goto(url, { timeout: Config.ScraperMgr.NAV_TIMEOUT_MS, waitUntil: 'domcontentloaded' });
+		let response: HTTPResponse | null = await page.goto(url, { timeout: Config.ScraperMgr.NAV_TIMEOUT_MS, waitUntil: 'domcontentloaded' })
+		.catch((err) => {
+			Logger.error(`${err}`);
+			return null;
+		});
+		if (!response) {
+			page.close();
+			return null;
+		}
 		let responseBody = await response.text();
-		let responseData = await response.buffer();
-		
+
 		if (responseBody.includes("Attention Required! | Cloudflare")) { // When we get a captcha, restart browser.
-			this.pause(true);
 			Logger.error("Captcha detected, restarting browser...");
-			await page.close();
-			await this.closeBrowser();
+			page.close();
+			await this.restartBrowser();
 			return null;
 		}
 
@@ -78,48 +114,69 @@ export class ScraperMgr {
 		while (responseBody.includes("cf-browser-verification")) {
 			this.pause(true); // Pause to allow page to close and update cookies instead of letting multiple page wait for browser validation
 			if (tryCount >= 2) {
-				await page.close();
+				page.close();
 				this.pause(false);
 				return null;
 			}
-			let newResponse = await page.waitForNavigation({ timeout: Config.ScraperMgr.NAV_TIMEOUT_MS, waitUntil: 'domcontentloaded' });
-			if (newResponse) {
-				response = newResponse;
+			let newResponse: HTTPResponse | null = await page.waitForNavigation({ timeout: Config.ScraperMgr.NAV_TIMEOUT_MS, waitUntil: 'domcontentloaded' })
+			.catch((err) => {
+				Logger.error(`${err}`);
+				page.close();
+				this.pause(false);
+				return null;
+			});
+
+
+			if (!newResponse) {
+				page.close();
+				this.pause(false);
+				return null;
 			}
+			response = newResponse;
 			responseBody = await response.text();
-			responseData = await response.buffer();
 			tryCount++;
 		}
-		// Add a delay before close page to slowdown the requests to reduce the chances of getting banned.
-		this.delay(Config.ScraperMgr.SLOWDOWN_MS).then(async () => {
-			await page.close();
-			this.pause(false);
-		});
 		
+		page.close();
+		this.pause(false);
 		return responseBody;
 	}
 
 	private async startBrowser() {
-		while (this.paused) { // If already paused, dont start a new browser to avoid starting multiple browser.
+		while (this.browserPaused) { // If already paused, dont start a new browser to avoid starting multiple browser.
 			await this.delay(Config.ScraperMgr.LOOP_INTERVAL_MS);
 		}
-		if (this.browser && this.browser.isConnected()) {
+
+		if (this.isBrowserValid()) {
 			return this.browser;
 		}
 
-		this.pause(true);
-		await this.forceKill(); // Make sure to kill any instance of browser before starting new one
-		this.browser = await Puppeteer.launch(this.options);
-		while (!this.browser.isConnected()) {
-			await this.delay(Config.ScraperMgr.LOOP_INTERVAL_MS);
+		this.browser = null;
+		this.pauseBrowser(true);
+		this.browser = await Puppeteer.launch(this.options)
+		.catch((err) => {
+			Logger.error(`Browser !!!!  ${err}`);
+			this.pauseBrowser(false);
+			return null;
+		});
+
+		if (!this.isBrowserValid()) {
+			this.pauseBrowser(false);
+			return false;
 		}
 		Logger.info("Browser started.");
-		this.processes.push(this.browser.process());
-		this.pause(false);
+		this.pauseBrowser(false);
+
+		/* this.browser.process().on("error", () => {
+			this.browser.process().kill();
+		}) */
 
 		this.browser.on("disconnected", async () => {
 			Logger.error("Browser disconnected.");
-			await this.closeBrowser();
+			if (this.browser) {
+				this.browser.process().kill();
+			}
+			this.browser = null;
 		});
 		this.updateLastUsed();
 		return this.browser;
@@ -127,12 +184,11 @@ export class ScraperMgr {
 
 	private async closeBrowser(): Promise<boolean> {
 		if (!this.browser) {
-			this.forceKill();
-			this.pause(false);
+			this.pauseBrowser(false);
 			return true;
 		}
 
-		this.pause(true);
+		this.pauseBrowser(true);
 		let pagesCount = 0;
 		let timer = Date.now();
 		do  { // Wait for other requests to finish, wait maximum of 10 sec.
@@ -142,16 +198,15 @@ export class ScraperMgr {
 		} while (pagesCount > 1 && (Date.now() - timer) < 10000);
 
 		if (this.browser) {
-			await this.browser.close();
-		}
-		
-		while (this.processes.length > 0) { // Kill a child process to make sure no browser stays open.
-			this.processes.pop().kill();
+			await this.browser.close()
+			.catch((err) => {
+				Logger.error(`${err}`);
+			});
 		}
 
-		await this.delay(3000);
 		this.browser = null;
-		this.pause(false);
+
+		this.pauseBrowser(false);
 		return true;
 	}
 
@@ -167,12 +222,25 @@ export class ScraperMgr {
 		if ((this.paused && this.pausedSince) && Date.now() - this.pausedSince > 10000) { // If paused for more than 10 sec, resume
 			this.pause(false);
 		}
-		if (!this.browser) {
+		if (!this.isBrowserValid()) {
 			return;
 		}
 
-		if (!this.browser.isConnected()) {
-			this.closeBrowser();
+		// Added this to close tabs that sometimes stays open.
+		this.pageList = this.pageList.filter((row) => {
+			if (Date.now() - row.startTime > Config.ScraperMgr.NAV_TIMEOUT_MS) {
+				if (row.page) {
+					row.page.close().catch((err) => {
+						// Silent error when page object no longer exist.
+					});
+				}
+				return false;
+			}
+			return true;
+		});
+
+		if (!this.isBrowserValid()) {
+			await this.closeBrowser();
 		}
 
 		if ((Date.now() - this.lastUse)/1000 < Config.ScraperMgr.BROWSER_LIFE_SEC) {
@@ -201,9 +269,30 @@ export class ScraperMgr {
 		this.pausedSince = null;
 	}
 
-	private async forceKill() {
-		while (this.processes.length > 0) { // Kill a child process to make sure no browser stays open.
-			this.processes.pop().kill();
-		}
+	private pauseBrowser(paused: boolean) {
+		this.browserPaused = paused;
 	}
+
+	private async restartBrowser(): Promise<void> {
+		await this.closeBrowser();
+		await this.delay(2000);
+		await this.startBrowser();
+	}
+
+	private isBrowserValid(): boolean {
+		if (!this.browser) {
+			return false;
+		}
+
+		if (!this.browser.isConnected()) {
+			return false;
+		}
+
+		if (this.browser.process().killed) {
+			return false;
+		}
+
+		return true;
+	}
+
 }
