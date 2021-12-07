@@ -1,11 +1,8 @@
-import Puppeteer from "puppeteer-extra";
-import StealthPlugin from "puppeteer-extra-plugin-stealth";
-Puppeteer.use(StealthPlugin());
+import Playwright from "playwright";
 import Logger from "loglevel";
 Logger.setLevel("debug");
 
-import { Config } from '../conf/config';
-import { Browser, Page, HTTPResponse } from "puppeteer";
+import { Config } from "./Config";
 
 
 interface BrowserOptions {
@@ -13,22 +10,36 @@ interface BrowserOptions {
 	args?: Array<string>,
 	userDataDir?: string,
 	slowMo?: number,
+	proxy? : { server: string, username: string, password: string },
+	bypassCSP?: boolean,
+	channel?: string,
+	ignoreDefaultArgs?: boolean | Array<string>,
 }
 
 export class ScraperMgr {
 	private options: BrowserOptions;
-	private browser: Browser | null = null;
+	private browser: Playwright.BrowserContext | null = null;
 	private lastUse: number;
 	private paused: boolean = false;
 	private browserPaused: boolean = false;
 	private pausedSince: number | null;
-	private pageList: Array<{ startTime: number, page: Page }> = [];
+	private pageList: Array<{ startTime: number, page: Playwright.Page }> = [];
 
 	constructor() {
 		this.options = {
 			headless: Config.ScraperMgr.PUPPETEER_HEADLESS,
-			args: ["--no-sandbox"],
-			//userDataDir: "./userDataDir",
+			args:	["--no-sandbox",
+					"--disable-session-crashed-bubble",
+					"--disable-gpu",
+					"--disable-blink-features=AutomationControlled",
+					"--disable-setuid-sandbox"
+			],
+			proxy: {
+				server: Config.ScraperMgr.PROXY_URL,
+				username: Config.ScraperMgr.PROXY_AUTH.username,
+				password: Config.ScraperMgr.PROXY_AUTH.password
+			},
+			bypassCSP: true,
 		};
 		if (Config.ScraperMgr.PROXY_URL.length){
 			this.options.args.push(`--proxy-server=${Config.ScraperMgr.PROXY_URL}`);
@@ -55,7 +66,7 @@ export class ScraperMgr {
 			return null;
 		}
 
-		const page: Page | null = await this.browser.newPage()
+		const page: Playwright.Page | null = await this.browser.newPage()
 		.catch((err) => {
 			Logger.error(`${err}`);
 			return null;
@@ -67,14 +78,7 @@ export class ScraperMgr {
 		}
 		this.pageList.push({ startTime: Date.now(), page: page });
 
-		if (Config.ScraperMgr.PROXY_AUTH.username) {
-			await page.authenticate(Config.ScraperMgr.PROXY_AUTH)
-			.catch((err) => {
-				Logger.error(`${err}`);
-			});
-		}
-		
-		let response: HTTPResponse | null = await page.goto(url, { timeout: Config.ScraperMgr.NAV_TIMEOUT_MS, waitUntil: 'domcontentloaded' })
+		let response: Playwright.Response | null = await page.goto(url, { timeout: Config.ScraperMgr.NAV_TIMEOUT_MS, waitUntil: 'domcontentloaded' })
 		.catch((err) => {
 			Logger.error(`${err}`);
 			return null;
@@ -86,9 +90,10 @@ export class ScraperMgr {
 		let responseBody = await response.text();
 
 		if (responseBody.includes("Attention Required! | Cloudflare")) { // When we get a captcha, restart browser.
-			Logger.error("Captcha detected, restarting browser...");
+			Logger.error("Captcha detected, clearing cookies...");
 			page.close();
-			await this.restartBrowser();
+			await this.browser.clearCookies();
+			//await this.restartBrowser();
 			return null;
 		}
 
@@ -100,7 +105,7 @@ export class ScraperMgr {
 				this.pause(false);
 				return null;
 			}
-			let newResponse: HTTPResponse | null = await page.waitForNavigation({ timeout: Config.ScraperMgr.NAV_TIMEOUT_MS/2, waitUntil: 'domcontentloaded' })
+			let newResponse: Playwright.Response | null = await page.waitForNavigation({ timeout: Config.ScraperMgr.NAV_TIMEOUT_MS/2, waitUntil: 'domcontentloaded' })
 			.catch((err) => {
 				Logger.error(`${err}`);
 				page.close();
@@ -119,6 +124,10 @@ export class ScraperMgr {
 			tryCount++;
 		}
 
+		if (Config.ScraperMgr.SLOWDOWN_MS) {
+			await this.delay(Config.ScraperMgr.SLOWDOWN_MS); // Add a delay before closing page to slow down scraping.
+		}
+
 		page.close();
 		this.pause(false);
 		return responseBody;
@@ -135,7 +144,7 @@ export class ScraperMgr {
 
 		this.browser = null;
 		this.pauseBrowser(true);
-		this.browser = await Puppeteer.launch(this.options)
+		this.browser = await Playwright.chromium.launchPersistentContext(`${__dirname}/userDataDir`, this.options)
 		.catch((err) => {
 			Logger.error(`Browser !!!!  ${err}`);
 			this.pauseBrowser(false);
@@ -150,16 +159,8 @@ export class ScraperMgr {
 		Logger.info("Browser started.");
 		this.pauseBrowser(false);
 
-		/* this.browser.process().on("error", () => {
-			this.browser.process().kill();
-		}) */
-
-		this.browser.on("disconnected", async () => {
+		this.browser.on("close", async () => {
 			Logger.error("Browser disconnected.");
-			if (this.browser) {
-				this.browser.process().kill();
-			}
-			this.browser = null;
 		});
 		this.updateLastUsed();
 		return this.browser;
@@ -174,11 +175,11 @@ export class ScraperMgr {
 		this.pauseBrowser(true);
 		let pagesCount = 0;
 		let timer = Date.now();
-		do  { // Wait for other requests to finish, wait maximum of 10 sec.
-			const pages = await this.browser.pages();
+ 		do  { // Wait for other requests to finish, wait maximum of 10 sec.
+			const pages = this.browser.pages();
 			pagesCount = pages.length;
 			await this.delay(Config.ScraperMgr.LOOP_INTERVAL_MS);
-		} while (pagesCount > 1 && (Date.now() - timer) < 10000);
+		} while (pagesCount > 1 && (Date.now() - timer) < 10000); 
 
 		if (this.browser) {
 			await this.browser.close()
@@ -223,15 +224,14 @@ export class ScraperMgr {
 		});
 
 		if (!this.isBrowserValid()) {
-			await this.closeBrowser();
+			return;
 		}
 
 		if ((Date.now() - this.lastUse)/1000 < Config.ScraperMgr.BROWSER_LIFE_SEC) {
 			return;
 		}
-
-		let pages = await this.browser.pages();
-		if (pages.length <= 1) { // here we set 1 because there is always one open tab.
+		let pages = this.browser.pages();
+		if (pages.length <= 1) {
 			Logger.info("Closing browser due to inactivity.");
 			await this.closeBrowser();
 		}
@@ -267,13 +267,13 @@ export class ScraperMgr {
 			return false;
 		}
 
-		if (!this.browser.isConnected()) {
+/* 		if (!this.browser.isConnected()) {
 			return false;
-		}
+		} */
 
-		if (this.browser.process().killed) {
+/* 		if (this.browser.process().killed) {
 			return false;
-		}
+		} */
 
 		return true;
 	}

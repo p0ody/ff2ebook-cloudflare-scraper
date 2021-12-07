@@ -5,7 +5,7 @@ Logger.setLevel("debug");
 
 import { ScraperMgr } from "./ScraperMgr";
 import { QueueMgr } from "./QueueMgr";
-import { Config } from "../conf/config";
+import { Config } from "./Config";
 
 const app = new Koa();
 app.use(BodyParser());
@@ -41,3 +41,7 @@ process.on("uncaughtException", (err: Error) => {
 process.on("unhandledRejection", (err: Error) => {
 	Logger.error("unhandledRejection: "+ err.message);
 });
+
+process.on("SIGTERM", () => {
+	process.exit();
+})

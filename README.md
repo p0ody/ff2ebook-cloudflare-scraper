@@ -6,7 +6,7 @@ Recommanded to use with a rotating proxy.
 
 To install:
 1. Clone repo
-2. Edit conf/config.ts to your liking
+2. Edit src/Config.ts to your liking
 3. npm install
 4. npm run build
 5. npm start
