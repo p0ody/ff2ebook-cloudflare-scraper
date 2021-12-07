@@ -4,7 +4,7 @@ export const Config = {
 	},
 	ScraperMgr: {
 		MAX_ASYNC_PAGE:		4,
-		LOOP_INTERVAL_MS:	700,
+		LOOP_INTERVAL_MS:	500,
 		PUPPETEER_HEADLESS:	false,
 		SLOWDOWN_MS:		1000, 	// Added to slow down puppeteer to reduce the change of getting blocked
 		PROXY_URL:			"",		// Include protocol (http://, https://)
@@ -13,7 +13,7 @@ export const Config = {
 								password: "",
 							},
 		BROWSER_LIFE_SEC:	30,
-		NAV_TIMEOUT_MS:		10000,
+		NAV_TIMEOUT_MS:		20000,
 	}
 
 };
