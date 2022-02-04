@@ -96,41 +96,45 @@ export class ScraperMgr {
 			//await this.restartBrowser();
 			return null;
 		}
-
+		
 		let tryCount = 0;
-		while (responseBody.includes("cf-browser-verification")) {
+		let wasVerificationPage = false;
+		while (await this.isInBrowserVerification(page)) {
 			this.pause(true); // Pause to allow page to close and update cookies instead of letting multiple page wait for browser validation
-			if (tryCount >= 2) {
+			wasVerificationPage = true;
+			if (tryCount >= Config.ScraperMgr.MAX_RETRY) {
 				page.close();
 				this.pause(false);
+				Logger.error("Timed out.");
 				return null;
 			}
-			let newResponse: Playwright.Response | null = await page.waitForNavigation({ timeout: Config.ScraperMgr.NAV_TIMEOUT_MS/2, waitUntil: 'domcontentloaded' })
-			.catch((err) => {
-				Logger.error(`${err}`);
-				page.close();
-				this.pause(false);
-				return null;
-			});
-
-
-			if (!newResponse) {
-				page.close();
-				this.pause(false);
-				return null;
-			}
-			response = newResponse;
-			responseBody = await response.text();
+			await this.delay(Config.ScraperMgr.NAV_TIMEOUT_MS / Config.ScraperMgr.MAX_RETRY);
 			tryCount++;
 		}
-
+		if (wasVerificationPage) {
+			responseBody = await page.content();
+		}
+	
 		if (Config.ScraperMgr.SLOWDOWN_MS) {
 			await this.delay(Config.ScraperMgr.SLOWDOWN_MS); // Add a delay before closing page to slow down scraping.
 		}
 
 		page.close();
+		if (wasVerificationPage) { // Add a delay to let cookies update before opening a new page.
+			await this.delay(500);
+		}
+
 		this.pause(false);
 		return responseBody;
+	}
+
+	private async isInBrowserVerification(page: Playwright.Page) {
+		const content = await page.content().catch(() => { return null });
+		if (!content) {
+			return true;
+		}
+
+		return content.includes("cf-browser-verification");
 	}
 
 	private async startBrowser() {
