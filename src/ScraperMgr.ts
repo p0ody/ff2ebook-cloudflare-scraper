@@ -134,7 +134,7 @@ export class ScraperMgr {
 			return true;
 		}
 
-		return content.includes("cf-browser-verification");
+		return content.includes("cf-browser-verification") || content.includes("cf-spinner-redirecting");
 	}
 
 	private async startBrowser() {
