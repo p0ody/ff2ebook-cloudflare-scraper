@@ -14,6 +14,7 @@ interface BrowserOptions {
 	bypassCSP?: boolean,
 	channel?: string,
 	ignoreDefaultArgs?: boolean | Array<string>,
+	viewport?: { width: number, height: number },
 }
 
 export class ScraperMgr {
@@ -40,6 +41,7 @@ export class ScraperMgr {
 				password: Config.ScraperMgr.PROXY_AUTH.password
 			},
 			bypassCSP: true,
+			viewport: { width: 800, height: 600 },
 		};
 		if (Config.ScraperMgr.PROXY_URL.length){
 			this.options.args.push(`--proxy-server=${Config.ScraperMgr.PROXY_URL}`);
