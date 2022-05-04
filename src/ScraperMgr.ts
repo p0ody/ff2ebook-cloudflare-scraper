@@ -103,7 +103,6 @@ export class ScraperMgr {
 		let wasVerificationPage = false;
 		while (await this.isInBrowserVerification(page)) {
 			this.pause(true); // Pause to allow page to close and update cookies instead of letting multiple page wait for browser validation
-			wasVerificationPage = true;
 			if (tryCount >= Config.ScraperMgr.MAX_RETRY) {
 				page.close();
 				this.pause(false);
@@ -113,17 +112,14 @@ export class ScraperMgr {
 			await this.delay(Config.ScraperMgr.NAV_TIMEOUT_MS / Config.ScraperMgr.MAX_RETRY);
 			tryCount++;
 		}
-		if (wasVerificationPage) {
-			responseBody = await page.content();
-		}
-	
 		if (Config.ScraperMgr.SLOWDOWN_MS) {
 			await this.delay(Config.ScraperMgr.SLOWDOWN_MS); // Add a delay before closing page to slow down scraping.
 		}
+		responseBody = await page.content();
 
 		page.close();
 		if (wasVerificationPage) { // Add a delay to let cookies update before opening a new page.
-			await this.delay(500);
+			await this.delay(1000);
 		}
 
 		this.pause(false);
