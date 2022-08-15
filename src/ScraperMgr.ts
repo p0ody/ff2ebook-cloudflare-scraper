@@ -132,7 +132,7 @@ export class ScraperMgr {
 			return true;
 		}
 
-		return content.includes("cf-browser-verification") || content.includes("cf-spinner-redirecting");
+		return content.includes("cf-browser-verification") || content.includes("cf-spinner-redirecting") || content.includes("cf-challenge-body-text");
 	}
 
 	private async startBrowser() {
