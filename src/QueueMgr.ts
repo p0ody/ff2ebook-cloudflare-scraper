@@ -119,4 +119,8 @@ export class QueueMgr {
 			}
 		}
 	}
+
+	get queueLength() {
+		return this.queue.length;
+	}
 }

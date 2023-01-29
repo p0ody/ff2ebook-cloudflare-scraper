@@ -18,6 +18,11 @@ app.use(async ctx => {
 	if (ctx.method == "POST") {
 		return;
 	}
+	if (ctx.path == "/queue") {
+		ctx.body = queue.queueLength;
+		return;
+	}
+	
 	if (ctx.query.url) {
 		requestCount++;
 		let url = <string>ctx.query.url
