@@ -11,7 +11,7 @@ const app = new Koa();
 app.use(BodyParser());
 
 const scraper = new ScraperMgr();
-const queue = new QueueMgr(Config.ScraperMgr.MAX_ASYNC_PAGE, 10000, 100);
+const queue = new QueueMgr(Config.ScraperMgr.MAX_ASYNC_PAGE, Config.ScraperMgr.NAV_TIMEOUT_MS, 100);
 let requestCount = 0;
 	
 app.use(async ctx => {	
@@ -26,7 +26,7 @@ app.use(async ctx => {
 	if (ctx.query.url) {
 		requestCount++;
 		let url = <string>ctx.query.url
-		Logger.info(`#${requestCount} - Url: ${url}`);
+		Logger.info(`#${requestCount} - Url: ${url}, QueueSize: ${queue.queueLength}`);
 		
  		let id = queue.push(async () => await scraper.getPage(url).catch((err) => { Logger.error(`getPage Error: ${err}`)}));
 		const res = await queue.waitFor(id);

@@ -1,8 +1,8 @@
 import Playwright from "playwright";
 import Logger from "loglevel";
-Logger.setLevel("debug");
 
 import { Config } from "./Config";
+import * as Captcha from "./Captcha";
 
 
 interface BrowserOptions {
@@ -35,15 +35,15 @@ export class ScraperMgr {
 					"--disable-blink-features=AutomationControlled",
 					"--disable-setuid-sandbox"
 			],
-			proxy: {
-				server: Config.ScraperMgr.PROXY_URL,
-				username: Config.ScraperMgr.PROXY_AUTH.username,
-				password: Config.ScraperMgr.PROXY_AUTH.password
-			},
 			bypassCSP: true,
 			viewport: { width: 800, height: 600 },
 		};
-		if (Config.ScraperMgr.PROXY_URL.length){
+		if (Config.ScraperMgr.PROXY_URL.length > 0){
+			this.options["proxy"] = {
+				server: Config.ScraperMgr.PROXY_URL,
+				username: Config.ScraperMgr.PROXY_AUTH.username,
+				password: Config.ScraperMgr.PROXY_AUTH.password
+			};
 			this.options.args.push(`--proxy-server=${Config.ScraperMgr.PROXY_URL}`);
 		}
 		this.updateLastUsed();
@@ -82,6 +82,7 @@ export class ScraperMgr {
 
 		let response: Playwright.Response | null = await page.goto(url, { timeout: Config.ScraperMgr.NAV_TIMEOUT_MS, waitUntil: 'domcontentloaded' })
 		.catch((err) => {
+			console.log("test");
 			Logger.error(`${err}`);
 			return null;
 		});
@@ -90,23 +91,23 @@ export class ScraperMgr {
 			return null;
 		}
 		let responseBody = await response.text();
-
-		if (responseBody.includes("Attention Required! | Cloudflare")) { // When we get a captcha, restart browser.
-			Logger.error("Captcha detected, clearing cookies...");
-			page.close();
-			await this.browser.clearCookies();
-			//await this.restartBrowser();
-			return null;
-		}
 		
 		let tryCount = 0;
 		let wasVerificationPage = false;
 		while (await this.isInBrowserVerification(page)) {
+			wasVerificationPage = true;
 			this.pause(true); // Pause to allow page to close and update cookies instead of letting multiple page wait for browser validation
+			if (!await Captcha.handleCaptcha(page)) { // When we get a captcha, clear cookies.
+				Logger.info("Captcha detected...");
+				await page.close();
+				await this.clearCookies();
+				return null;
+			}
 			if (tryCount >= Config.ScraperMgr.MAX_RETRY) {
 				page.close();
 				this.pause(false);
 				Logger.error("Timed out.");
+				await this.clearCookies(); // When time out, clear cookie because it is likely caused by cloudflare
 				return null;
 			}
 			await this.delay(Config.ScraperMgr.NAV_TIMEOUT_MS / Config.ScraperMgr.MAX_RETRY);
@@ -132,7 +133,16 @@ export class ScraperMgr {
 			return true;
 		}
 
-		return content.includes("cf-browser-verification") || content.includes("cf-spinner-redirecting") || content.includes("cf-challenge-body-text") || content.includes("challenge-running");
+		return (content.includes("cf-browser-verification") 
+		|| content.includes("cf-spinner-redirecting") 
+		|| content.includes("cf-challenge-body-text") 
+		|| content.includes("challenge-running"));
+	}
+
+
+	private async clearCookies() {
+		Logger.error("Clearing browser cookies...");
+		await this.browser.clearCookies();
 	}
 
 	private async startBrowser() {
