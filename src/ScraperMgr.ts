@@ -97,11 +97,13 @@ export class ScraperMgr {
 		while (await this.isInBrowserVerification(page)) {
 			wasVerificationPage = true;
 			this.pause(true); // Pause to allow page to close and update cookies instead of letting multiple page wait for browser validation
-			if (!await Captcha.handleCaptcha(page)) { // When we get a captcha, clear cookies.
+			if (await Captcha.containCaptcha(page)) { // When we get a captcha, clear cookies.
 				Logger.info("Captcha detected...");
-				await page.close();
-				await this.clearCookies();
-				return null;
+				if (!await Captcha.handleCaptcha(page)) {
+					await page.close();
+					await this.clearCookies();
+					return null;
+				}
 			}
 			if (tryCount >= Config.ScraperMgr.MAX_RETRY) {
 				page.close();
@@ -113,21 +115,24 @@ export class ScraperMgr {
 			await this.delay(Config.ScraperMgr.NAV_TIMEOUT_MS / Config.ScraperMgr.MAX_RETRY);
 			tryCount++;
 		}
-		if (Config.ScraperMgr.SLOWDOWN_MS) {
-			await this.delay(Config.ScraperMgr.SLOWDOWN_MS); // Add a delay before closing page to slow down scraping.
-		}
-		responseBody = await page.content();
 
-		page.close();
+		responseBody = await page.content();
+		// Add a delay before closing page to slow down scraping.
+
+
 		if (wasVerificationPage) { // Add a delay to let cookies update before opening a new page.
 			await this.delay(1000);
 		}
 
+		this.delay(Config.ScraperMgr.SLOWDOWN_MS).then(() => {
+			page.close();
+		});
 		this.pause(false);
 		return responseBody;
 	}
 
-	private async isInBrowserVerification(page: Playwright.Page) {
+	private async isInBrowserVerification(page: Playwright.Page): Promise<boolean> {
+		await page.waitForLoadState("domcontentloaded");
 		const content = await page.content().catch(() => { return null });
 		if (!content) {
 			return true;
