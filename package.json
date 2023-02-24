@@ -22,9 +22,7 @@
   "devDependencies": {
     "@types/koa": "^2.13.5",
     "@types/koa-bodyparser": "^4.3.10",
-    "@types/loglevel": "^1.6.3",
     "@typescript-eslint/eslint-plugin": "^5.50.0",
-    "@typescript-eslint/parser": "^5.50.0",
     "eslint": "^8.33.0",
     "nodemon": "^2.0.20",
     "ts-node": "^10.9.1",
@@ -35,7 +33,6 @@
     "jsesc": "^3.0.2",
     "koa": "^2.14.1",
     "koa-bodyparser": "^4.3.0",
-    "loglevel": "^1.8.1",
     "playwright": "^1.30.0",
     "uuid": "^8.3.2"
   }

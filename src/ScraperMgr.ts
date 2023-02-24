@@ -90,6 +90,7 @@ export class ScraperMgr {
 			page.close();
 			return null;
 		}
+		
 		let responseBody = await response.text();
 		
 		let tryCount = 0;

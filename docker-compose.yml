@@ -1,0 +1,15 @@
+services:
+  scraper:
+    build: .
+    environment:
+      - DISPLAY=xvfb:99
+    ports:
+      - '3000:3000'
+    restart: always
+
+    depends_on:
+      - xvfb
+
+  xvfb:
+    image: metal3d/xvfb
+    restart: always
