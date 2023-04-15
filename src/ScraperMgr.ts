@@ -139,7 +139,8 @@ export class ScraperMgr {
 			return true;
 		}
 
-		return (content.includes("cf-browser-verification") 
+		return (content.includes("challenge-error-title") 
+		|| content.includes("cf-browser-verification") 
 		|| content.includes("cf-spinner-redirecting") 
 		|| content.includes("cf-challenge-body-text") 
 		|| content.includes("challenge-running"));
