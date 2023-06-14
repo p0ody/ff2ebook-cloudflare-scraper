@@ -13,7 +13,8 @@ export async function handleCaptcha(page: Playwright.Page): Promise<boolean> { /
         return false;
     }
 
-    if (content.includes("hcaptcha-box")) { // Clickable captha
+    if (content.includes("hcaptcha-box")
+    ||  content.includes("turnstile-wrapper")) { // Clickable captha
         Logger.info("trying check captcha");
         //const checkbox = page.locator("css=.ctp-checkbox-label");
         //await page.mouse.move(65, 280);
@@ -38,8 +39,9 @@ export async function containCaptcha(page: Playwright.Page): Promise<boolean> {
     const content = await page.content().catch((err) => { throw err });
 
     if (content.includes("Attention Required! | Cloudflare") 
-        || content.includes("hcaptcha-box") 
-        || content.includes("big-button")) {
+    ||  content.includes("hcaptcha-box") 
+    ||  content.includes("big-button")
+    ||  content.includes("turnstile-wrapper")) {
         return true;
     }
 
