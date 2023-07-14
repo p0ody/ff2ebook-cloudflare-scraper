@@ -1,4 +1,5 @@
-FROM node:18-slim
+FROM node:18
+FROM mcr.microsoft.com/playwright:v1.36.0-jammy
 WORKDIR /app
 
 RUN apt-get update && apt-get install curl gnupg xvfb -y \
@@ -10,6 +11,7 @@ RUN apt-get update && apt-get install curl gnupg xvfb -y \
 
   
 COPY ["package.json", "package-lock.json", "tsconfig.json", "./"]
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 RUN npm install
 COPY . .
 RUN npm run build

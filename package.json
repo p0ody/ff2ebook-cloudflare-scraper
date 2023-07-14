@@ -34,7 +34,7 @@
     "koa": "^2.14.1",
     "koa-bodyparser": "^4.3.0",
     "loglevel": "^1.8.1",
-    "playwright": "^1.30.0",
+    "playwright": "^1.36.1",
     "uuid": "^8.3.2"
   }
 }

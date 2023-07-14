@@ -15,6 +15,10 @@ interface BrowserOptions {
 	channel?: string,
 	ignoreDefaultArgs?: boolean | Array<string>,
 	viewport?: { width: number, height: number },
+	screen?: { width: number, height: number },
+	chromiumSandbox?: boolean,
+	locale?: string,
+	userAgent?: string,
 }
 
 export class ScraperMgr {
@@ -37,6 +41,8 @@ export class ScraperMgr {
 			],
 			bypassCSP: true,
 			viewport: { width: 800, height: 600 },
+			chromiumSandbox: false,
+			slowMo: Config.ScraperMgr.SLOWDOWN_MS,
 		};
 		if (Config.ScraperMgr.PROXY_URL.length > 0){
 			this.options["proxy"] = {
@@ -98,14 +104,14 @@ export class ScraperMgr {
 		while (await this.isInBrowserVerification(page)) {
 			wasVerificationPage = true;
 			this.pause(true); // Pause to allow page to close and update cookies instead of letting multiple page wait for browser validation
-			if (await Captcha.containCaptcha(page)) { // When we get a captcha, clear cookies.
-				Logger.info("Captcha detected...");
-				if (!await Captcha.handleCaptcha(page)) {
-					await page.close();
-					await this.clearCookies();
-					return null;
-				}
+			if (!await Captcha.solveCaptcha(page)) { 
+				Logger.info("Captcha not solved.");
+				await page.close();
+				await this.clearCookies();
+				return null;
 			}
+			Logger.info("Captcha solved.");
+
 			if (tryCount >= Config.ScraperMgr.MAX_RETRY) {
 				page.close();
 				this.pause(false);
@@ -120,15 +126,15 @@ export class ScraperMgr {
 		responseBody = await page.content();
 		// Add a delay before closing page to slow down scraping.
 
-
+		page.close();
 		if (wasVerificationPage) { // Add a delay to let cookies update before opening a new page.
-			await this.delay(1000);
+			setTimeout(() => {
+				this.pause(false);
+			}, 1000);
+		} else {
+			this.pause(false);
 		}
 
-		this.delay(Config.ScraperMgr.SLOWDOWN_MS).then(() => {
-			page.close();
-		});
-		this.pause(false);
 		return responseBody;
 	}
 
